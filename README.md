@@ -26,12 +26,12 @@ This sample mapping came from [wikidata-filter](https://github.com/johtani/wikid
 Show help with the following command::
 
 ```
-$ .target/release/bin/bulk2es -h
+$ ./target/release/bin/bulk2es -h
 ```
 
 #### Options
 
 ```
-$ ./bulk2es -c <SEARCH_ENGINE_CONFIG> <INPUT_DIR>
+$ ./target/release/bin/bulk2es -c <SEARCH_ENGINE_CONFIG> <INPUT_DIR>
 ```
 

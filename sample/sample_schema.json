@@ -1,0 +1,58 @@
+{
+  "mappings" : {
+    "properties" : {
+      "aliases" : {
+        "type" : "text",
+        "analyzer" : "kuromoji",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
+      },
+      "claims" : {
+        "properties" : {
+          "P31" : {
+            "type" : "text",
+            "fields" : {
+              "keyword" : {
+                "type" : "keyword",
+                "ignore_above" : 256
+              }
+            }
+          }
+        }
+      },
+      "descriptions" : {
+        "type" : "text",
+        "analyzer" : "kuromoji",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
+      },
+      "id" : {
+        "type" : "text",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
+      },
+      "labels" : {
+        "type" : "text",
+        "analyzer" : "kuromoji",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
+      }
+    }
+  }
+}

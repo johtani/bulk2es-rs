@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate clap;
 
+use bulk2es_rs::loader::load;
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
 use std::env;
-use bulk2es_rs::loader::{load};
 
 fn main() {
     if env::var("RUST_LOG").is_err() {

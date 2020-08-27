@@ -1,10 +1,10 @@
+use crate::output::ElasticsearchOutput;
 use glob::glob;
 use log::{info, warn};
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use crate::output::ElasticsearchOutput;
 
 fn load_file(filepath: &str, config_file: &str) -> Result<(), String> {
     let mut search_engine = ElasticsearchOutput::new(config_file);
@@ -25,10 +25,7 @@ fn initialize_es(config_file: &str) {
     initializer.initialize();
 }
 
-pub fn load(
-    input_dir: &str,
-    config_file: &str,
-) -> Result<(), String> {
+pub fn load(input_dir: &str, config_file: &str) -> Result<(), String> {
     initialize_es(config_file);
     // TODO should we care other files?
     let path = Path::new(input_dir).join(Path::new("**/*.json"));
@@ -39,9 +36,7 @@ pub fn load(
         .collect();
     files
         .par_iter()
-        .map(|filepath| {
-            load_file(filepath.to_str().unwrap(), config_file)
-        })
+        .map(|filepath| load_file(filepath.to_str().unwrap(), config_file))
         .filter_map(|x| x.ok())
         .collect::<()>();
     Ok(())

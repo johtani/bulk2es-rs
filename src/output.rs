@@ -3,11 +3,11 @@ use elasticsearch::http::transport::{SingleNodeConnectionPool, TransportBuilder}
 use elasticsearch::http::StatusCode;
 use elasticsearch::indices::{IndicesCreateParts, IndicesExistsParts};
 use elasticsearch::{BulkParts, Elasticsearch};
-use log::{debug, info, warn, error};
-use serde_json::{json, Value, Map};
+use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 use std::fs::File;
 use url::Url;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EsConfig {
@@ -121,21 +121,23 @@ impl ElasticsearchOutput {
             .body(schema_json)
             .send()
             .await;
-        match response {
+        return match response {
             Ok(response) => {
                 if !response.status_code().is_success() {
                     warn!(
                         "Create index request has failed. Status Code is {:?}.",
                         response.status_code()
                     );
-                    // FIXME if ...
-                    warn!("create index failed")
+                    Err(String::from("Create index failed"))
                 } else {
                     info!("{} index was created.", &self.config.index_name);
+                    Ok(())
                 }
-                return Ok(());
             }
-            Err(error) => {error!("create index failed. {}", error); return Err(error.to_string())},
+            Err(error) => {
+                error!("create index failed. {}", error);
+                Err(error.to_string())
+            }
         }
     }
 
@@ -147,38 +149,39 @@ impl ElasticsearchOutput {
             .exists(IndicesExistsParts::Index(&indices))
             .send()
             .await;
-        match result {
+        return match result {
             Ok(response) => match response.status_code() {
-                StatusCode::NOT_FOUND => return Ok(false),
-                StatusCode::OK => return Ok(true),
+                StatusCode::NOT_FOUND => Ok(false),
+                StatusCode::OK => Ok(true),
                 _ => {
                     warn!(
                         "Indices exists request has failed. Status Code is {:?}.",
                         response.status_code()
                     );
                     warn!("Indices exists request failed");
-                    return Err(format!("Indices exists request failed. {:?}", response.status_code()))
+                    Err(format!(
+                        "Indices exists request failed. {:?}",
+                        response.status_code()
+                    ))
                 }
             },
-            Err(error) => {error!("Indices exists request failed..."); return Err(error.to_string());},
+            Err(error) => {
+                error!("Indices exists request failed...");
+                Err(error.to_string())
+            }
         }
     }
 
-    pub async fn proceed_chunk(
-        &self,
-        chunk: &[String],
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn proceed_chunk(&self, chunk: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let mut body: Vec<JsonBody<_>> = Vec::new();
         for d in chunk {
-            let doc_map: Map<String, Value> = serde_json::from_str(d.as_str())
-                .expect("something wrong during parsing json");
+            let doc_map: Map<String, Value> =
+                serde_json::from_str(d.as_str()).expect("something wrong during parsing json");
             let id = match doc_map.get(self.config.id_field_name.as_str()) {
-                None => {panic!("ID not found... skip this line. {}", d)},
-                Some(id_value) => {
-                    match id_value.as_str() {
-                        None => {panic!("ID not found... skip this line. {}")},
-                        Some(id_str) => { id_str},
-                    }
+                None => panic!("ID not found... skip this line. {}", d),
+                Some(id_value) => match id_value.as_str() {
+                    None => panic!("ID not found... skip this line. {}"),
+                    Some(id_str) => id_str,
                 },
             };
             body.push(json!({"index": {"_id": id}}).into());

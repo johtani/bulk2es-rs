@@ -4,16 +4,10 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use crate::output::{ElasticsearchOutput, SearchEngine};
+use crate::output::ElasticsearchOutput;
 
-fn create_search_engine(
-    config_file: &str,
-) -> Box<dyn SearchEngine>  {
-    return
-        Box::new(ElasticsearchOutput::new(config_file));
-}
-
-fn load_file(filepath: &str, search_engine: &mut Box<dyn SearchEngine>) -> Result<String, String> {
+fn load_file(filepath: &str, config_file: &str) -> Result<(), String> {
+    let mut search_engine = ElasticsearchOutput::new(config_file);
     info!("Reading {}", filepath);
     for line_result in BufReader::new(File::open(filepath).unwrap()).lines() {
         match line_result {
@@ -22,17 +16,22 @@ fn load_file(filepath: &str, search_engine: &mut Box<dyn SearchEngine>) -> Resul
         }
     }
     search_engine.close();
-    Ok(format!("Finish: {}", filepath).to_string())
+    info!("Finish: {}", filepath);
+    Ok(())
+}
+
+fn initialize_es(config_file: &str) {
+    let initializer = ElasticsearchOutput::new(config_file);
+    initializer.initialize();
 }
 
 pub fn load(
     input_dir: &str,
     config_file: &str,
 ) -> Result<(), String> {
-    // TODO
+    initialize_es(config_file);
+    // TODO should we care other files?
     let path = Path::new(input_dir).join(Path::new("**/*.json"));
-    let initializer = create_search_engine(config_file);
-    initializer.initialize();
     // read files from input_dir
     let files: Vec<_> = glob(path.to_str().unwrap())
         .unwrap()
@@ -41,12 +40,9 @@ pub fn load(
     files
         .par_iter()
         .map(|filepath| {
-            // read JSONs from file
-            // create output instance search_engine_type
-            let mut search_engine = create_search_engine(config_file);
-            load_file(filepath.to_str().unwrap(), &mut search_engine)
+            load_file(filepath.to_str().unwrap(), config_file)
         })
         .filter_map(|x| x.ok())
-        .collect::<String>();
+        .collect::<()>();
     Ok(())
 }

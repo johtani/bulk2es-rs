@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use elasticsearch::http::request::JsonBody;
 use elasticsearch::http::transport::{SingleNodeConnectionPool, TransportBuilder};
 use elasticsearch::http::StatusCode;
@@ -10,17 +9,6 @@ use std::fs::File;
 use url::Url;
 use serde::{Deserialize, Serialize};
 
-#[async_trait]
-pub trait SearchEngine {
-    fn new(config_file: &str) -> Self
-        where
-            Self: Sized;
-    fn add_document(&mut self, document: String);
-    fn initialize(&self);
-    fn exist_index(&self) -> bool;
-    fn close(&mut self);
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EsConfig {
     url: String,
@@ -30,17 +18,19 @@ pub struct EsConfig {
     id_field_name: String,
 }
 
+impl EsConfig {
+    fn new(config_file: &str) -> Self {
+        let f = File::open(config_file)
+            .expect(format!("config file is not found. {}", config_file).as_str());
+        let config: EsConfig = serde_yaml::from_reader(f).expect(format!("Parse Error").as_str());
+        return config;
+    }
+}
+
 pub struct ElasticsearchOutput {
     client: Elasticsearch,
     buffer: Vec<String>,
     config: EsConfig,
-}
-
-fn load_config(config_file: &str) -> EsConfig {
-    let f = File::open(config_file)
-        .expect(format!("config file is not found. {}", config_file).as_str());
-    let config: EsConfig = serde_yaml::from_reader(f).expect(format!("Parse Error").as_str());
-    return config;
 }
 
 pub fn load_schema(schema_file: &str) -> Value {
@@ -51,11 +41,10 @@ pub fn load_schema(schema_file: &str) -> Value {
     return schema;
 }
 
-#[async_trait]
-impl SearchEngine for ElasticsearchOutput {
-    fn new(_config_file: &str) -> Self {
+impl ElasticsearchOutput {
+    pub fn new(_config_file: &str) -> Self {
         // read config
-        let config = load_config(_config_file);
+        let config = EsConfig::new(_config_file);
         debug!("url: {}", config.url);
         debug!("buffer_size: {}", config.buffer_size);
         // TODO Elastic Cloud?
@@ -74,11 +63,11 @@ impl SearchEngine for ElasticsearchOutput {
         }
     }
 
-    fn add_document(&mut self, _document: String) {
+    pub fn add_document(&mut self, _document: String) {
         self.buffer.push(_document);
     }
 
-    fn initialize(&self) {
+    pub fn initialize(&self) {
         if self.exist_index() {
             //no-op if index already exists
             info!(
@@ -96,13 +85,13 @@ impl SearchEngine for ElasticsearchOutput {
         }
     }
 
-    fn exist_index(&self) -> bool {
+    pub fn exist_index(&self) -> bool {
         let mut _rt = tokio::runtime::Runtime::new().expect("Fail initializing runtime");
         let task = self.call_indices_exists();
         _rt.block_on(task).expect("Something wrong...")
     }
 
-    fn close(&mut self) {
+    pub fn close(&mut self) {
         let chunk_size = if self.buffer.len() <= self.config.buffer_size {
             self.buffer.len()
         } else {
@@ -209,7 +198,7 @@ impl ElasticsearchOutput {
             );
             panic!("bulk indexing failed")
         } else {
-            info!("response : {}", bulk_response.status_code());
+            debug!("response : {}", bulk_response.status_code());
             let response_body = bulk_response.json::<Value>().await?;
             let successful = response_body["errors"].as_bool().unwrap() == false;
             if successful == false {
@@ -231,7 +220,7 @@ impl ElasticsearchOutput {
                 }
             }
         }
-        info!("Finished bulk request.");
+        debug!("Finished bulk request.");
         Ok(())
     }
 }

@@ -120,6 +120,7 @@ impl ElasticsearchOutput {
     fn create_elasticsearch_client(config: &EsConfig) -> Elasticsearch {
         match &config.cloud_id {
             None => {
+                debug!("Using url...");
                 let url = Url::parse(config.url.as_str()).unwrap();
                 let conn_pool = SingleNodeConnectionPool::new(url);
                 let builder: TransportBuilder =
@@ -131,6 +132,7 @@ impl ElasticsearchOutput {
                 return Elasticsearch::new(transport);
             }
             Some(cloud_id) => {
+                debug!("Using cloud_id...");
                 let credentials = match ElasticsearchOutput::create_credentials(&config) {
                     None => { panic!("Cannot create Credentials with user & password. Both user and password are required.") }
                     Some(creds) => { creds }

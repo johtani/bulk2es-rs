@@ -193,14 +193,16 @@ impl ElasticsearchOutput {
                 StatusCode::NOT_FOUND => Ok(false),
                 StatusCode::OK => Ok(true),
                 _ => {
+                    let status_code = response.status_code();
                     warn!(
                         "Indices exists request has failed. Status Code is {:?}.",
-                        response.status_code()
+                        status_code
                     );
                     warn!("Indices exists request failed");
+                    if let Ok(body) = &response.text().await { warn!("{}", body); }
                     Err(format!(
                         "Indices exists request failed. {:?}",
-                        response.status_code()
+                        status_code
                     ))
                 }
             },

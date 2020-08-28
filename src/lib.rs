@@ -1,2 +1,2 @@
-pub mod output;
 pub mod loader;
+pub mod output;

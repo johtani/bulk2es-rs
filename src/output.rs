@@ -1,5 +1,6 @@
+use elasticsearch::auth::Credentials;
 use elasticsearch::http::request::JsonBody;
-use elasticsearch::http::transport::{SingleNodeConnectionPool, TransportBuilder};
+use elasticsearch::http::transport::{SingleNodeConnectionPool, Transport, TransportBuilder};
 use elasticsearch::http::StatusCode;
 use elasticsearch::indices::{IndicesCreateParts, IndicesExistsParts};
 use elasticsearch::{BulkParts, Elasticsearch};
@@ -16,6 +17,9 @@ pub struct EsConfig {
     index_name: String,
     schema_file: String,
     id_field_name: String,
+    cloud_id: Option<String>,
+    user: Option<String>,
+    password: Option<String>,
 }
 
 impl EsConfig {
@@ -47,14 +51,7 @@ impl ElasticsearchOutput {
         let config = EsConfig::new(_config_file);
         debug!("url: {}", config.url);
         debug!("buffer_size: {}", config.buffer_size);
-        // TODO Elastic Cloud?
-        let url = Url::parse(config.url.as_str()).unwrap();
-        let conn_pool = SingleNodeConnectionPool::new(url);
-        let transport = TransportBuilder::new(conn_pool)
-            .disable_proxy()
-            .build()
-            .unwrap();
-        let client = Elasticsearch::new(transport);
+        let client = ElasticsearchOutput::create_elasticsearch_client(&config);
         let buffer = vec![];
         ElasticsearchOutput {
             client,
@@ -69,15 +66,11 @@ impl ElasticsearchOutput {
 
     pub fn initialize(&self) {
         if self.exist_index() {
-            //no-op if index already exists
             info!(
                 "{} index already exists. skip initialization phase.",
                 &self.config.index_name
             );
         } else {
-            // load schema.json from file
-            // -> if not found, panic!
-            // create index with schema file
             info!("{} index is creating...", &self.config.index_name);
             let mut _rt = tokio::runtime::Runtime::new().expect("Fail initializing runtime");
             let task = self.call_indices_create();
@@ -109,9 +102,51 @@ impl ElasticsearchOutput {
         }
         self.buffer.clear();
     }
-}
 
-impl ElasticsearchOutput {
+    fn create_credentials(config: &EsConfig) -> Option<Credentials> {
+        match &config.user {
+            None => None,
+            Some(user) => {
+                match &config.password {
+                    None => None,
+                    Some(password) => {
+                        Some(Credentials::Basic(user.to_string(), password.to_string()))
+                    }
+                }
+            }
+        }
+    }
+
+    fn create_elasticsearch_client(config: &EsConfig) -> Elasticsearch {
+        match &config.cloud_id {
+            None => {
+                let url = Url::parse(config.url.as_str()).unwrap();
+                let conn_pool = SingleNodeConnectionPool::new(url);
+                let builder: TransportBuilder =
+                    match ElasticsearchOutput::create_credentials(&config) {
+                        None => TransportBuilder::new(conn_pool).disable_proxy(),
+                        Some(creds) => TransportBuilder::new(conn_pool).disable_proxy().auth(creds),
+                    };
+                let transport = builder.build().unwrap();
+                return Elasticsearch::new(transport);
+            }
+            Some(cloud_id) => {
+                let credentials = match ElasticsearchOutput::create_credentials(&config) {
+                    None => { panic!("Cannot create Credentials with user & password. Both user and password are required.") }
+                    Some(creds) => { creds }
+                };
+                match Transport::cloud(cloud_id.as_str(), credentials) {
+                    Ok(transport) => {
+                        return Elasticsearch::new(transport);
+                    }
+                    Err(err) => {
+                        panic!("Cannot create client for Elastic Cloud. {}", err);
+                    }
+                }
+            }
+        }
+    }
+
     async fn call_indices_create(&self) -> Result<(), String> {
         let schema_json = load_schema(&self.config.schema_file);
         let response = self
@@ -123,22 +158,26 @@ impl ElasticsearchOutput {
             .await;
         return match response {
             Ok(response) => {
-                if !response.status_code().is_success() {
-                    warn!(
-                        "Create index request has failed. Status Code is {:?}.",
-                        response.status_code()
-                    );
-                    Err(String::from("Create index failed"))
-                } else {
-                    info!("{} index was created.", &self.config.index_name);
-                    Ok(())
+                match &response.error_for_status_code_ref() {
+                    Ok(_) => {
+                        info!("{} index was created.", &self.config.index_name);
+                        Ok(())
+                    }
+                    Err(error) => {
+                        warn!(
+                            "Create index request has failed. Status Code is {:?}.",
+                            error.status_code().unwrap()
+                        );
+                        if let Ok(body) = &response.text().await { warn!("{}", body); }
+                        Err(String::from("Create index failed."))
+                    }
                 }
             }
             Err(error) => {
                 error!("create index failed. {}", error);
                 Err(error.to_string())
             }
-        }
+        };
     }
 
     async fn call_indices_exists(&self) -> Result<bool, String> {
@@ -169,7 +208,7 @@ impl ElasticsearchOutput {
                 error!("Indices exists request failed...");
                 Err(error.to_string())
             }
-        }
+        };
     }
 
     pub async fn proceed_chunk(&self, chunk: &[String]) -> Result<(), Box<dyn std::error::Error>> {

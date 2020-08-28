@@ -3,3 +3,4 @@
 /target
 tmp_dir/*
 *.log
+sample/wikipedia/*

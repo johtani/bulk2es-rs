@@ -4,3 +4,4 @@
 tmp_dir/*
 *.log
 sample/wikipedia/*
+sample/es_cloud/*

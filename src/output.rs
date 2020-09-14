@@ -201,21 +201,29 @@ impl ElasticsearchOutput {
         };
     }
 
-    async fn proceed_chunk(&self, chunk: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    async fn proceed_chunk(&self, chunk: &[String]) -> Result<(), String> {
         let mut body: Vec<JsonBody<_>> = Vec::new();
         for d in chunk {
             let doc_map: Map<String, Value> =
                 serde_json::from_str(d.as_str()).expect("something wrong during parsing json");
-            let id = match doc_map.get(self.config.id_field_name.as_str()) {
-                None => panic!("ID not found... skip this line. {}", d),
+            let id: Option<&str> = match doc_map.get(self.config.id_field_name.as_str()) {
+                None => {
+                    error!("ID not found... skip this line. {}", d);
+                    None
+                }
                 Some(id_value) => match id_value.as_str() {
-                    None => panic!("ID not found... skip this line. {}"),
-                    Some(id_str) => id_str,
+                    None => {
+                        error!("ID not found... skip this line. {}", d);
+                        None
+                    }
+                    Some(id_str) => Some(id_str),
                 },
             };
-            body.push(json!({"index": {"_id": id}}).into());
-            // TODO can we use d instead of doc_map?
-            body.push(JsonBody::from(serde_json::to_value(doc_map).unwrap()));
+            if let Some(id) = id {
+                body.push(json!({"index": {"_id": id}}).into());
+                // TODO can we use d instead of doc_map?
+                body.push(JsonBody::from(serde_json::to_value(doc_map).unwrap()));
+            }
         }
         info!("Sending {} documents... ", chunk.len());
         let bulk_response = self
@@ -223,37 +231,56 @@ impl ElasticsearchOutput {
             .bulk(BulkParts::Index(self.config.index_name.as_str()))
             .body(body)
             .send()
-            .await?;
-        if !bulk_response.status_code().is_success() {
-            warn!(
-                "Bulk request has failed. Status Code is {:?}. ",
-                bulk_response.status_code(),
-            );
-            panic!("bulk indexing failed")
-        } else {
-            debug!("response : {}", bulk_response.status_code());
-            let response_body = bulk_response.json::<Value>().await?;
-            let successful = response_body["errors"].as_bool().unwrap() == false;
-            if successful == false {
-                warn!("Bulk Request has some errors. {:?}", successful);
-                let items = response_body["items"].as_array().unwrap();
-                for item in items {
-                    if let Some(index_obj) = item["index"].as_object() {
-                        if index_obj.contains_key("error") {
-                            if let Some(obj) = index_obj["error"].as_object() {
-                                warn!(
-                                    "error id:[{}], type:[{}], reason:[{}]",
-                                    index_obj.get("_id").unwrap(),
-                                    obj.get("type").unwrap(),
-                                    obj.get("reason").unwrap()
-                                );
-                            }
+            .await;
+        return match bulk_response {
+            Ok(bulk_response) => {
+                if !bulk_response.status_code().is_success() {
+                    error!(
+                        "Bulk request has failed. Status Code is {:?}. ",
+                        bulk_response.status_code(),
+                    );
+                    Err(String::from("bulk indexing failed"))
+                } else {
+                    debug!("response : {}", bulk_response.status_code());
+                    let response_body = bulk_response.json::<Value>().await;
+                    match response_body {
+                        Ok(response_body) => {
+                            ElasticsearchOutput::print_bulk_errors(response_body);
+                            debug!("Finished bulk request.");
+                            Ok(())
+                        }
+                        Err(error) => {
+                            error!("{:?}", error);
+                            Err(String::from("Error occurs during parsing response..."))
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                error!("{:?}", error);
+                Err(String::from("Error occurs during request sending..."))
+            }
+        };
+    }
+
+    fn print_bulk_errors(response_body: Value) {
+        if response_body["errors"].as_bool().unwrap() == true {
+            warn!("Bulk Request has some errors.");
+            let items = response_body["items"].as_array().unwrap();
+            for item in items {
+                if let Some(index_obj) = item["index"].as_object() {
+                    if index_obj.contains_key("error") {
+                        if let Some(obj) = index_obj["error"].as_object() {
+                            warn!(
+                                "error id:[{}], type:[{}], reason:[{}]",
+                                index_obj.get("_id").unwrap(),
+                                obj.get("type").unwrap(),
+                                obj.get("reason").unwrap()
+                            );
                         }
                     }
                 }
             }
         }
-        debug!("Finished bulk request.");
-        Ok(())
     }
 }

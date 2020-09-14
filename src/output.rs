@@ -26,8 +26,14 @@ impl EsConfig {
     fn new(config_file: &str) -> Self {
         let f = File::open(config_file)
             .expect(format!("Config file is not found. {}", config_file).as_str());
-        let config: EsConfig = serde_yaml::from_reader(f).expect(format!("Parse Error").as_str());
-        return config;
+        return serde_yaml::from_reader(f).expect("Parse Error");
+    }
+
+    fn load_schema(&self) -> Value {
+        info!("schema file is {}", &self.schema_file);
+        let f = File::open(&self.schema_file)
+            .expect(format!("schema file is not found. {}", &self.schema_file).as_str());
+        return serde_json::from_reader(f).expect("schema cannot read...");
     }
 }
 
@@ -35,14 +41,6 @@ pub struct ElasticsearchOutput {
     client: Elasticsearch,
     buffer: Vec<String>,
     config: EsConfig,
-}
-
-fn load_schema(schema_file: &str) -> Value {
-    info!("schema file is {}", schema_file);
-    let f = File::open(schema_file)
-        .expect(format!("schema file is not found. {}", schema_file).as_str());
-    let schema: Value = serde_json::from_reader(f).expect("schema cannot read...");
-    return schema;
 }
 
 impl ElasticsearchOutput {
@@ -137,7 +135,7 @@ impl ElasticsearchOutput {
     }
 
     async fn call_indices_create(&self) -> Result<(), String> {
-        let schema_json = load_schema(&self.config.schema_file);
+        let schema_json = &self.config.load_schema();
         let response = self
             .client
             .indices()

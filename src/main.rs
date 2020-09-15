@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate clap;
 
-use bulk2es_rs::loader::load;
+use bulk2es_rs::loader::Loader;
 use clap::{App, AppSettings, Arg};
 use log::{error, info};
 use std::env;
@@ -38,8 +38,9 @@ fn main() {
     let matches = app.get_matches();
     let config_file = matches.value_of("CONFIG").unwrap();
     let input_dir = matches.value_of("INPUT_DIR").unwrap();
+    let loader = Loader::new(input_dir, config_file);
 
-    match load(input_dir, config_file) {
+    match loader.load() {
         Ok(()) => {
             info!("{}", "done");
         }

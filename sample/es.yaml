@@ -1,9 +1,9 @@
 # url to elasticsearch cluster
 url: "http://192.168.1.24:9200"
 # bulk size
-buffer_size: 100000
+buffer_size: 5
 # index name
-index_name: wikidata_test
+index_name: wikidata_test2
 # set absolute file path or relative file path from directory that command run.
 schema_file: "./sample/sample_schema.json"
 # the field name of _id from JSON
